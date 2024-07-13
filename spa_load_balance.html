@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel Upload and Drag-Drop Combination</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        #fileInput {
+            margin-bottom: 20px;
+        }
+        .draggable {
+            display: inline-block;
+            padding: 8px;
+            margin: 4px;
+            border: 1px solid black;
+            cursor: grab;
+        }
+        .dropzone {
+            border: 2px dashed #aaa;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .dropzone.active {
+            border-color: #333;
+        }
+        #jsonPreview {
+            white-space: pre-wrap;
+            background-color: #f8f8f8;
+            padding: 10px;
+            border: 1px solid #ddd;
+            margin-top: 20px;
+        }
+        .button {
+            margin: 5px;
+            padding: 10px 15px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Upload and Combine Excel Data</h1>
+    <p>Excel must have 2 work sheets</p> 
+    <ol>
+        <li>one named "server", column named "server_ip" with all server ip listed below.</li>
+        <li>one named "client", column named "port" and "uuid" with all client port and uuid listed separately below.</li>
+    </ol>
+    <input type="file" id="fileInput" accept=".xlsx, .xls">
+    
+    <h2>Draggable Items</h2>
+    <div id="draggableContainer"></div>
+    
+    <h2>Combination Area</h2>
+    <div id="dropzone" class="dropzone">Drop server_ip and port here</div>
+
+    <button id="resetButton" class="button">Reset</button>
+    <button id="undoButton" class="button">Undo</button>
+    <button id="downloadJson" class="button">Download JSON</button>
+
+    <h2>JSON Preview</h2>
+    <div id="jsonPreview"></div>
+
+    <!-- Include SheetJS library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <script>
+        document.getElementById('fileInput').addEventListener('change', handleFile, false);
+        document.getElementById('resetButton').addEventListener('click', resetCombinations, false);
+        document.getElementById('undoButton').addEventListener('click', undoLastCombination, false);
+        document.getElementById('downloadJson').addEventListener('click', downloadJson, false);
+
+        let combinations = [];
+        let history = [];
+        let portUuidMap = {};
+
+        function handleFile(event) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+
+            reader.onload = function(event) {
+                const data = new Uint8Array(event.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+
+                const serverSheet = workbook.Sheets['server'];
+                const clientSheet = workbook.Sheets['client'];
+
+                const serverIpJson = XLSX.utils.sheet_to_json(serverSheet);
+                const clientJson = XLSX.utils.sheet_to_json(clientSheet);
+                
+                const draggableContainer = document.getElementById('draggableContainer');
+                draggableContainer.innerHTML = '';
+
+                serverIpJson.forEach((row) => {
+                    if (row.server_ip) {
+                        let serverIpDiv = document.createElement('div');
+                        serverIpDiv.classList.add('draggable');
+                        serverIpDiv.textContent = `server_ip: ${row.server_ip}`;
+                        serverIpDiv.draggable = true;
+                        serverIpDiv.dataset.type = 'server_ip';
+                        serverIpDiv.dataset.value = row.server_ip;
+                        serverIpDiv.addEventListener('dragstart', handleDragStart);
+                        draggableContainer.appendChild(serverIpDiv);
+                    }
+                });
+
+                clientJson.forEach((row) => {
+                    if (row.port && row.uuid) {
+                        let portDiv = document.createElement('div');
+                        portDiv.classList.add('draggable');
+                        portDiv.textContent = `port: ${row.port}`;
+                        portDiv.draggable = true;
+                        portDiv.dataset.type = 'port';
+                        portDiv.dataset.value = row.port;
+                        portDiv.dataset.uuid = row.uuid; // Store the uuid as a dataset attribute
+                        portDiv.addEventListener('dragstart', handleDragStart);
+
+                        portUuidMap[row.port] = row.uuid; // Map port to uuid
+
+                        draggableContainer.appendChild(portDiv);
+                    }
+                });
+
+                const dropzone = document.getElementById('dropzone');
+                dropzone.addEventListener('dragover', handleDragOver);
+                dropzone.addEventListener('drop', handleDrop);
+            };
+
+            reader.readAsArrayBuffer(file);
+        }
+
+        function handleDragStart(event) {
+            event.dataTransfer.setData('text/plain', JSON.stringify({
+                type: event.target.dataset.type,
+                value: event.target.dataset.value,
+                uuid: event.target.dataset.uuid // Include the uuid in the data transfer
+            }));
+        }
+
+        function handleDragOver(event) {
+            event.preventDefault();
+            event.currentTarget.classList.add('active');
+        }
+
+        function handleDrop(event) {
+            event.preventDefault();
+            event.currentTarget.classList.remove('active');
+
+            const data = JSON.parse(event.dataTransfer.getData('text/plain'));
+            const dropzone = document.getElementById('dropzone');
+
+            if (data.type === 'server_ip' || data.type === 'port') {
+                const existing = Array.from(dropzone.children).find(
+                    child => child.dataset.type === data.type
+                );
+                if (existing) {
+                    dropzone.removeChild(existing);
+                }
+
+                const item = document.createElement('div');
+                item.textContent = `${data.type}: ${data.value}`;
+                item.dataset.type = data.type;
+                item.dataset.value = data.value;
+
+                if (data.type === 'port') {
+                    item.dataset.uuid = data.uuid; // Store uuid for the port item
+                }
+
+                dropzone.appendChild(item);
+            }
+
+            updateCombinations();
+        }
+
+        function updateCombinations() {
+            const dropzone = document.getElementById('dropzone');
+            const serverIp = dropzone.querySelector('[data-type="server_ip"]');
+            const port = dropzone.querySelector('[data-type="port"]');
+
+            if (serverIp && port) {
+                const combination = {
+                    server_ip: serverIp.dataset.value,
+                    port: port.dataset.value,
+                    uuid: port.dataset.uuid // Retrieve uuid from the port item
+                };
+
+                combinations.push(combination);
+                history.push(combination); // Push to history for undo functionality
+
+                dropzone.innerHTML = 'Drop server_ip and port here';
+                updateJsonPreview();
+            }
+        }
+
+        function updateJsonPreview() {
+            const jsonPreview = document.getElementById('jsonPreview');
+            const outbounds = combinations.map((combo, index) => ({
+                tag: `proxy${index + 1}`,
+                protocol: "vmess",
+                settings: {
+                    vnext: [
+                        {
+                            address: combo.server_ip,
+                            port: parseInt(combo.port),
+                            users: [
+                                {
+                                    id: combo.uuid,
+                                    alterId: 0,
+                                    security: "auto"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                streamSettings: {
+                    network: "tcp",
+                    tcpSettings: {
+                        header: {
+                            type: "http",
+                            request: {
+                                version: "1.1",
+                                method: "GET",
+                                path: ["/"],
+                                headers: {
+                                    Host: [""],
+                                    "User-Agent": [""],
+                                    "Accept-Encoding": ["gzip, deflate"],
+                                    Connection: ["keep-alive"],
+                                    Pragma: "no-cache"
+                                }
+                            }
+                        }
+                    }
+                },
+                mux: {
+                    enabled: true,
+                    concurrency: 8
+                }
+            }));
+
+            const outboundsCount = outbounds.length;
+            const balancers = [
+                {
+                    tag: "b1",
+                    selector: Array.from({ length: outboundsCount }, (_, index) => `proxy${index + 1}`),
+                    strategy: {
+                        type: "random"
+                    }
+                }
+            ];
+
+            const jsonData = {
+                policy: {
+                    system: {
+                        statsOutboundUplink: true,
+                        statsOutboundDownlink: true
+                    }
+                },
+                log: {
+                    access: "",
+                    error: "",
+                    loglevel: "warning"
+                },
+                inbounds: [
+                    {
+                        tag: "socks",
+                        port: 10808,
+                        listen: "0.0.0.0",
+                        protocol: "socks",
+                        sniffing: {
+                            enabled: true,
+                            destOverride: [
+                                "http",
+                                "tls"
+                            ],
+                            routeOnly: false
+                        },
+                        settings: {
+                            auth: "noauth",
+                            udp: true,
+                            allowTransparent: false
+                        }
+                    },
+                    {
+                        tag: "http",
+                        port: 10809,
+                        listen: "0.0.0.0",
+                        protocol: "http",
+                        sniffing: {
+                            enabled: true,
+                            destOverride: [
+                                "http",
+                                "tls"
+                            ],
+                            routeOnly: false
+                        },
+                        settings: {
+                            auth: "noauth",
+                            udp: true,
+                            allowTransparent: false
+                        }
+                    },
+                    {
+                        tag: "api",
+                        port: 9090,
+                        listen: "127.0.0.1",
+                        protocol: "dokodemo-door",
+                        settings: {
+                            udp: false,
+                            address: "127.0.0.1",
+                            allowTransparent: false
+                        }
+                    }
+                ],
+                outbounds: outbounds,
+                stats: {},
+                api: {
+                    tag: "api",
+                    services: [
+                        "StatsService"
+                    ]
+                },
+                dns: {
+                    servers: [
+                        "1.1.1.1",
+                        "8.8.8.8"
+                    ]
+                },
+                routing: {
+                    domainStrategy: "AsIs",
+                    balancers: balancers,
+                    rules: [
+                        {
+                            type: "field",
+                            inboundTag: [
+                                "api"
+                            ],
+                            outboundTag: "api"
+                        },
+                        {
+                            type: "field",
+                            outboundTag: "direct",
+                            domain: [
+                                "domain:example-example.com",
+                                "domain:example-example2.com"
+                            ]
+                        },
+                        {
+                            type: "field",
+                            outboundTag: "block",
+                            domain: [
+                                "geosite:category-ads-all"
+                            ]
+                        },
+                        {
+                            type: "field",
+                            outboundTag: "direct",
+                            domain: [
+                                "geosite:cn"
+                            ]
+                        },
+                        {
+                            type: "field",
+                            outboundTag: "direct",
+                            ip: [
+                                "geoip:private",
+                                "geoip:cn"
+                            ]
+                        },
+                        {
+                            type: "field",
+                            network: "tcp,udp",
+                            balancerTag: "b1"
+                        }
+                    ]
+                }
+            };
+
+            jsonPreview.textContent = JSON.stringify(jsonData, null, 4);
+        }
+
+        function downloadJson() {
+            const jsonContent = document.getElementById('jsonPreview').textContent;
+            const blob = new Blob([jsonContent], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'load_balance.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+
+        function resetCombinations() {
+            combinations = [];
+            history = [];
+            updateJsonPreview();
+            document.getElementById('dropzone').innerHTML = 'Drop server_ip and port here';
+        }
+
+        function undoLastCombination() {
+            if (history.length > 0) {
+                const lastCombination = history.pop();
+                combinations = combinations.filter(combo => combo !== lastCombination);
+                updateJsonPreview();
+            }
+        }
+    </script>
+</body>
+</html>
