@@ -43,11 +43,11 @@
     </style>
 </head>
 <body>
-    <h1>Upload and Combine Excel Data</h1>
-    <p>Excel must have 2 work sheets</p> 
+    <h1>Upload and Generate Load Balance Config</h1>
+    <p>Excel file must have 2 work sheets</p> 
     <ol>
-        <li>one named "server", column named "server_ip" with all server ip listed below.</li>
-        <li>one named "client", column named "port" and "uuid" with all client port and uuid listed separately below.</li>
+        <li>One named "server", column named "server_ip" with all server ip listed below.</li>
+        <li>Another one named "client", columns named "port" and "uuid" with all client port and uuid listed separately below.</li>
     </ol>
     <input type="file" id="fileInput" accept=".xlsx, .xls">
     
@@ -57,7 +57,7 @@
     <h2>Combination Area</h2>
     <div id="dropzone" class="dropzone">Drop server_ip and port here</div>
 
-    <button id="resetButton" class="button">Reset</button>
+    <button id="resetButton" class="button" style="color: red;">Reset</button>
     <button id="undoButton" class="button">Undo</button>
     <button id="downloadJson" class="button">Download JSON</button>
 
