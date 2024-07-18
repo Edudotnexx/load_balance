@@ -40,26 +40,27 @@
             font-size: 16px;
             cursor: pointer;
         }
+
+        red {
+            color: red;
+        }
     </style>
 </head>
 <body>
     <h1>Upload and Generate Load Balance Config</h1>
-    <p>Excel file must have 2 work sheets</p> 
-    <ol>
-        <li>One named "server", column named "server_ip" with all server ip listed below.</li>
-        <li>Another one named "client", columns named "port" and "uuid" with all client port and uuid listed separately below.</li>
-    </ol>
+    <p>Excel file must have one sheet with columns named "<red>Server IP</red>", "<red>Port</red>" and "<red>UUID</red>".</p>
     <input type="file" id="fileInput" accept=".xlsx, .xls">
     
     <h2>Draggable Items</h2>
-    <div id="draggableContainer"></div>
+    <p>Server IP: </p><div id="draggableServerContainer"></div>
+    <p>Client Port: </p><div id="draggableClientContainer"></div>
     
     <h2>Combination Area</h2>
     <div id="dropzone" class="dropzone">Drop server_ip and port here</div>
 
     <button id="resetButton" class="button" style="color: red;">Reset</button>
     <button id="undoButton" class="button">Undo</button>
-    <button id="downloadJson" class="button">Download JSON</button>
+    <button id="downloadJson" class="button" style="color: green;">Download JSON</button>
 
     <h2>JSON Preview</h2>
     <div id="jsonPreview"></div>
@@ -84,42 +85,47 @@
                 const data = new Uint8Array(event.target.result);
                 const workbook = XLSX.read(data, { type: 'array' });
 
-                const serverSheet = workbook.Sheets['server'];
-                const clientSheet = workbook.Sheets['client'];
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
 
-                const serverIpJson = XLSX.utils.sheet_to_json(serverSheet);
-                const clientJson = XLSX.utils.sheet_to_json(clientSheet);
-                
-                const draggableContainer = document.getElementById('draggableContainer');
-                draggableContainer.innerHTML = '';
+                const jsonData = XLSX.utils.sheet_to_json(sheet);
 
-                serverIpJson.forEach((row) => {
-                    if (row.server_ip) {
-                        let serverIpDiv = document.createElement('div');
-                        serverIpDiv.classList.add('draggable');
-                        serverIpDiv.textContent = `server_ip: ${row.server_ip}`;
-                        serverIpDiv.draggable = true;
-                        serverIpDiv.dataset.type = 'server_ip';
-                        serverIpDiv.dataset.value = row.server_ip;
-                        serverIpDiv.addEventListener('dragstart', handleDragStart);
-                        draggableContainer.appendChild(serverIpDiv);
+                const serverIps = new Set();
+                jsonData.forEach((row) => {
+                    if (row["Server IP"]) {
+                        serverIps.add(row["Server IP"]);
                     }
                 });
 
-                clientJson.forEach((row) => {
-                    if (row.port && row.uuid) {
+                const draggableServerContainer = document.getElementById('draggableServerContainer');
+                draggableServerContainer.innerHTML = '';
+
+                serverIps.forEach((serverIp) => {
+                    let serverIpDiv = document.createElement('div');
+                    serverIpDiv.classList.add('draggable');
+                    serverIpDiv.textContent = `Server IP: ${serverIp}`;
+                    serverIpDiv.draggable = true;
+                    serverIpDiv.dataset.type = 'server_ip';
+                    serverIpDiv.dataset.value = serverIp;
+                    serverIpDiv.addEventListener('dragstart', handleDragStart);
+                    draggableServerContainer.appendChild(serverIpDiv);
+                });
+
+                const draggableClientContainer = document.getElementById('draggableClientContainer');
+                draggableClientContainer.innerHTML = '';
+                jsonData.forEach((row) => {
+                    if (row["Port"] && row["UUID"]) {
                         let portDiv = document.createElement('div');
                         portDiv.classList.add('draggable');
-                        portDiv.textContent = `port: ${row.port}`;
+                        portDiv.textContent = `Port: ${row["Port"]}`;
                         portDiv.draggable = true;
                         portDiv.dataset.type = 'port';
-                        portDiv.dataset.value = row.port;
-                        portDiv.dataset.uuid = row.uuid; // Store the uuid as a dataset attribute
+                        portDiv.dataset.value = row["Port"];
+                        portDiv.dataset.uuid = row["UUID"]; // Store the uuid as a dataset attribute
                         portDiv.addEventListener('dragstart', handleDragStart);
 
-                        portUuidMap[row.port] = row.uuid; // Map port to uuid
+                        portUuidMap[row["Port"]] = row["UUID"]; // Map port to uuid
 
-                        draggableContainer.appendChild(portDiv);
+                        draggableClientContainer.appendChild(portDiv);
                     }
                 });
 
